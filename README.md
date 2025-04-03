@@ -33,6 +33,17 @@ ANTHROPIC_API_KEY=your_api_key_here
 GOOGLE_CREDENTIALS_PATH=path/to/your/service_account_credentials.json  # Optional
 ```
 
+## Docker Setup
+
+Follow these instructions to set up the project using Docker:
+
+1. Install Docker and Docker Compose on your system.
+2. Clone this repository.
+3. Run `docker-compose up` to start the services.
+4. Access the application at `http://localhost:8080`.
+
+For more details, refer to the original README.docker.md file.
+
 ## Usage
 
 ### Using Shell Scripts
