@@ -11,8 +11,11 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
       - GOOGLE_CREDENTIALS_PATH=/app/credentials.json
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OAUTHLIB_INSECURE_TRANSPORT=1  # Allow HTTP for local development
+      - OAUTHLIB_RELAX_TOKEN_SCOPE=1   # Handle token scope variations
     ports:
-      - "8000:8000"  # In case the app needs to serve content
+      - "8000:8000"  # Main application port
+      - "8080:8080"  # Additional port for OAuth callbacks
     restart: unless-stopped
     command: bash -c "python client.py app/gdrive_server.py"
     stdin_open: true  # Keep STDIN open for interactive queries
