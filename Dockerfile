@@ -25,4 +25,4 @@ EXPOSE 8000
 ENTRYPOINT ["/bin/bash", "-c"]
 
 # Default command - but this will be overridden by docker-compose
-CMD ["python client.py gdrive_server_fixed.py"]
+CMD ["python client.py app/gdrive_server_fixed.py"]
