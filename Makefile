@@ -23,3 +23,4 @@ clean:
 	# Clean up temporary files and containers
 	docker-compose down
 	rm -rf .venv
+	rm -rf __pycache__
