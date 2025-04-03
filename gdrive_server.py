@@ -2,18 +2,18 @@ import io
 import os
 import pickle
 
-import mcp.server.types as types
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
-from mcp.server import Server
+from mcp.server.fastmcp import FastMCP
 
 # If modifying these scopes, delete the token.pickle file
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
-app = Server("gdrive-server")
+# Initialize FastMCP server
+mcp = FastMCP("gdrive-server")
 drive_service = None
 
 
@@ -59,307 +59,240 @@ def get_drive_service():
     return drive_service
 
 
-@app.list_tools()
-async def list_tools() -> list[types.Tool]:
-    return [
-        types.Tool(
-            name="list_files",
-            description="List files in Google Drive",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "max_results": {"type": "number", "default": 10},
-                    "query": {"type": "string", "default": ""},
-                },
-            },
-        ),
-        types.Tool(
-            name="search_files",
-            description="Search for files in Google Drive by name or content",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"},
-                    "max_results": {"type": "number", "default": 10},
-                },
-                "required": ["query"],
-            },
-        ),
-        types.Tool(
-            name="get_file_content",
-            description="Get the content of a text file from Google Drive",
-            inputSchema={
-                "type": "object",
-                "properties": {"file_id": {"type": "string"}},
-                "required": ["file_id"],
-            },
-        ),
-        types.Tool(
-            name="get_file_metadata",
-            description="Get metadata for a specific file",
-            inputSchema={
-                "type": "object",
-                "properties": {"file_id": {"type": "string"}},
-                "required": ["file_id"],
-            },
-        ),
-        types.Tool(
-            name="list_folders",
-            description="List folders in Google Drive",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "parent_id": {"type": "string", "default": "root"},
-                    "max_results": {"type": "number", "default": 10},
-                },
-            },
-        ),
-    ]
+@mcp.tool()
+async def list_files(max_results: int = 10, query: str = "") -> str:
+    """List files in Google Drive
 
-
-@app.call_tool()
-async def call_tool(name: str, arguments: dict) -> list[types.TextContent | types.ImageContent]:
+    Args:
+        max_results: Maximum number of files to return (default: 10)
+        query: Optional query to filter files
+    """
     service = get_drive_service()
 
-    if name == "list_files":
-        max_results = int(arguments.get("max_results", 10))
-        query = arguments.get("query", "")
+    results = (
+        service.files()
+        .list(
+            q=query,
+            pageSize=max_results,
+            fields="files(id, name, mimeType, createdTime, modifiedTime, size, parents)",
+        )
+        .execute()
+    )
 
-        results = (
+    files = results.get("files", [])
+    if not files:
+        return "No files found."
+
+    file_list_items = []
+    for file in files:
+        file_info = f"• {file['name']} (ID: {file['id']})\n"
+        file_info += f"  - Type: {file['mimeType']}\n"
+        if "createdTime" in file:
+            file_info += f"  - Created: {file['createdTime']}\n"
+        if "modifiedTime" in file:
+            file_info += f"  - Modified: {file['modifiedTime']}\n"
+        if "size" in file:
+            file_info += f"  - Size: {int(file['size']) // 1024} KB\n"
+        file_list_items.append(file_info)
+
+    file_list = "\n".join(file_list_items)
+    return f"Files found ({len(files)}):\n\n{file_list}"
+
+
+@mcp.tool()
+async def search_files(query: str, max_results: int = 10) -> str:
+    """Search for files in Google Drive by name or content
+
+    Args:
+        query: Search query text
+        max_results: Maximum number of files to return (default: 10)
+    """
+    service = get_drive_service()
+
+    # Format the query for Google Drive API
+    search_query = f"name contains '{query}' or fullText contains '{query}'"
+
+    results = (
+        service.files()
+        .list(
+            q=search_query,
+            pageSize=max_results,
+            fields="files(id, name, mimeType, createdTime, modifiedTime, size)",
+        )
+        .execute()
+    )
+
+    files = results.get("files", [])
+    if not files:
+        return f"No files found matching '{query}'."
+
+    file_list_items = []
+    for file in files:
+        file_info = f"• {file['name']} (ID: {file['id']})\n"
+        file_info += f"  - Type: {file['mimeType']}\n"
+        if "createdTime" in file:
+            file_info += f"  - Created: {file['createdTime']}\n"
+        if "modifiedTime" in file:
+            file_info += f"  - Modified: {file['modifiedTime']}\n"
+        file_list_items.append(file_info)
+
+    file_list = "\n".join(file_list_items)
+    return f"Search results for '{query}' ({len(files)}):\n\n{file_list}"
+
+
+@mcp.tool()
+async def get_file_content(file_id: str) -> str:
+    """Get the content of a text file from Google Drive
+
+    Args:
+        file_id: Google Drive file ID
+    """
+    service = get_drive_service()
+
+    try:
+        # Get file metadata first to check mime type
+        file = service.files().get(fileId=file_id, fields="name,mimeType").execute()
+
+        # For text files
+        if (
+            file["mimeType"] == "text/plain"
+            or file["mimeType"].startswith("text/")
+            or file["mimeType"] == "application/json"
+        ):
+            request = service.files().get_media(fileId=file_id)
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+
+            content = fh.getvalue().decode("utf-8")
+            return f"Content of '{file['name']}':\n\n{content}"
+
+        # For Google Docs
+        elif file["mimeType"] == "application/vnd.google-apps.document":
+            # Export as plain text
+            request = service.files().export_media(fileId=file_id, mimeType="text/plain")
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+
+            content = fh.getvalue().decode("utf-8")
+            return f"Content of Google Doc '{file['name']}':\n\n{content}"
+
+        # For Google Sheets
+        elif file["mimeType"] == "application/vnd.google-apps.spreadsheet":
+            # Export as CSV
+            request = service.files().export_media(fileId=file_id, mimeType="text/csv")
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+
+            content = fh.getvalue().decode("utf-8")
+            return f"Content of Google Sheet '{file['name']}' (CSV format):\n\n{content}"
+
+        else:
+            return (
+                f"Cannot display content for file type: {file['mimeType']}. "
+                "This file type is not supported for text preview."
+            )
+
+    except Exception as e:
+        return f"Error retrieving file: {str(e)}"
+
+
+@mcp.tool()
+async def get_file_metadata(file_id: str) -> str:
+    """Get metadata for a specific file
+
+    Args:
+        file_id: Google Drive file ID
+    """
+    service = get_drive_service()
+
+    try:
+        file = (
             service.files()
-            .list(
-                q=query,
-                pageSize=max_results,
-                fields="files(id, name, mimeType, createdTime, modifiedTime, size, parents)",
+            .get(
+                fileId=file_id,
+                fields="id,name,mimeType,createdTime,modifiedTime,size,description,webViewLink,owners,parents",  # noqa: E501
             )
             .execute()
         )
 
-        files = results.get("files", [])
-        if not files:
-            return [types.TextContent(type="text", text="No files found.")]
+        metadata = [f"File: {file['name']}"]
+        metadata.append(f"ID: {file['id']}")
+        metadata.append(f"Type: {file['mimeType']}")
 
-        file_list_items = []
-        for file in files:
-            file_info = f"• {file['name']} (ID: {file['id']})\n"
-            file_info += f"  - Type: {file['mimeType']}\n"
-            if "createdTime" in file:
-                file_info += f"  - Created: {file['createdTime']}\n"
-            if "modifiedTime" in file:
-                file_info += f"  - Modified: {file['modifiedTime']}\n"
-            if "size" in file:
-                file_info += f"  - Size: {int(file['size']) // 1024} KB\n"
-            file_list_items.append(file_info)
+        if "createdTime" in file:
+            metadata.append(f"Created: {file['createdTime']}")
+        if "modifiedTime" in file:
+            metadata.append(f"Modified: {file['modifiedTime']}")
+        if "size" in file:
+            size_kb = int(file["size"]) // 1024 if "size" in file else "N/A"
+            metadata.append(f"Size: {size_kb} KB")
+        if "description" in file and file["description"]:
+            metadata.append(f"Description: {file['description']}")
+        if "webViewLink" in file:
+            metadata.append(f"Web View: {file['webViewLink']}")
+        if "owners" in file:
+            owners = ", ".join([owner.get("displayName", "Unknown") for owner in file["owners"]])
+            metadata.append(f"Owners: {owners}")
 
-        file_list = "\n".join(file_list_items)
-        return [types.TextContent(type="text", text=f"Files found ({len(files)}):\n\n{file_list}")]
+        return "\n".join(metadata)
 
-    elif name == "search_files":
-        query_text = arguments["query"]
-        max_results = int(arguments.get("max_results", 10))
+    except Exception as e:
+        return f"Error retrieving file metadata: {str(e)}"
 
-        # Format the query for Google Drive API
-        search_query = f"name contains '{query_text}' or fullText contains '{query_text}'"
 
-        results = (
-            service.files()
-            .list(
-                q=search_query,
-                pageSize=max_results,
-                fields="files(id, name, mimeType, createdTime, modifiedTime, size)",
-            )
-            .execute()
-        )
+@mcp.tool()
+async def list_folders(parent_id: str = "root", max_results: int = 10) -> str:
+    """List folders in Google Drive
 
-        files = results.get("files", [])
-        if not files:
-            return [types.TextContent(type="text", text=f"No files found matching '{query_text}'.")]
+    Args:
+        parent_id: ID of the parent folder (default: "root")
+        max_results: Maximum number of folders to return (default: 10)
+    """
+    service = get_drive_service()
 
-        file_list_items = []
-        for file in files:
-            file_info = f"• {file['name']} (ID: {file['id']})\n"
-            file_info += f"  - Type: {file['mimeType']}\n"
-            if "createdTime" in file:
-                file_info += f"  - Created: {file['createdTime']}\n"
-            if "modifiedTime" in file:
-                file_info += f"  - Modified: {file['modifiedTime']}\n"
-            file_list_items.append(file_info)
+    # Query to find only folders
+    query = f"'{parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder'"
 
-        file_list = "\n".join(file_list_items)
-        return [
-            types.TextContent(
-                type="text",
-                text=f"Search results for '{query_text}' ({len(files)}):\n\n{file_list}",
-            )
-        ]
+    results = (
+        service.files()
+        .list(q=query, pageSize=max_results, fields="files(id, name, createdTime, modifiedTime)")
+        .execute()
+    )
 
-    elif name == "get_file_content":
-        file_id = arguments["file_id"]
-
-        try:
-            # Get file metadata first to check mime type
-            file = service.files().get(fileId=file_id, fields="name,mimeType").execute()
-
-            # For text files
-            if (
-                file["mimeType"] == "text/plain"
-                or file["mimeType"].startswith("text/")
-                or file["mimeType"] == "application/json"
-            ):
-                request = service.files().get_media(fileId=file_id)
-                fh = io.BytesIO()
-                downloader = MediaIoBaseDownload(fh, request)
-
-                done = False
-                while not done:
-                    _, done = downloader.next_chunk()
-
-                content = fh.getvalue().decode("utf-8")
-                return [
-                    types.TextContent(
-                        type="text", text=f"Content of '{file['name']}':\n\n{content}"
-                    )
-                ]
-
-            # For Google Docs
-            elif file["mimeType"] == "application/vnd.google-apps.document":
-                # Export as plain text
-                request = service.files().export_media(fileId=file_id, mimeType="text/plain")
-                fh = io.BytesIO()
-                downloader = MediaIoBaseDownload(fh, request)
-
-                done = False
-                while not done:
-                    _, done = downloader.next_chunk()
-
-                content = fh.getvalue().decode("utf-8")
-                return [
-                    types.TextContent(
-                        type="text", text=f"Content of Google Doc '{file['name']}':\n\n{content}"
-                    )
-                ]
-
-            # For Google Sheets
-            elif file["mimeType"] == "application/vnd.google-apps.spreadsheet":
-                # Export as CSV
-                request = service.files().export_media(fileId=file_id, mimeType="text/csv")
-                fh = io.BytesIO()
-                downloader = MediaIoBaseDownload(fh, request)
-
-                done = False
-                while not done:
-                    _, done = downloader.next_chunk()
-
-                content = fh.getvalue().decode("utf-8")
-                return [
-                    types.TextContent(
-                        type="text",
-                        text=f"Content of Google Sheet '{file['name']}' (CSV format):\n\n{content}",
-                    )
-                ]
-
-            else:
-                return [
-                    types.TextContent(
-                        type="text",
-                        text=(
-                            f"Cannot display content for file type: {file['mimeType']}. "
-                            "This file type is not supported for text preview."
-                        ),
-                    )
-                ]
-
-        except Exception as e:
-            return [types.TextContent(type="text", text=f"Error retrieving file: {str(e)}")]
-
-    elif name == "get_file_metadata":
-        file_id = arguments["file_id"]
-
-        try:
-            file = (
-                service.files()
-                .get(
-                    fileId=file_id,
-                    fields="id,name,mimeType,createdTime,modifiedTime,size,description,webViewLink,owners,parents",  # noqa: E501
-                )
-                .execute()
-            )
-
-            metadata = [f"File: {file['name']}"]
-            metadata.append(f"ID: {file['id']}")
-            metadata.append(f"Type: {file['mimeType']}")
-
-            if "createdTime" in file:
-                metadata.append(f"Created: {file['createdTime']}")
-            if "modifiedTime" in file:
-                metadata.append(f"Modified: {file['modifiedTime']}")
-            if "size" in file:
-                size_kb = int(file["size"]) // 1024 if "size" in file else "N/A"
-                metadata.append(f"Size: {size_kb} KB")
-            if "description" in file and file["description"]:
-                metadata.append(f"Description: {file['description']}")
-            if "webViewLink" in file:
-                metadata.append(f"Web View: {file['webViewLink']}")
-            if "owners" in file:
-                owners = ", ".join(
-                    [owner.get("displayName", "Unknown") for owner in file["owners"]]
-                )
-                metadata.append(f"Owners: {owners}")
-
-            return [types.TextContent(type="text", text="\n".join(metadata))]
-
-        except Exception as e:
-            return [
-                types.TextContent(type="text", text=f"Error retrieving file metadata: {str(e)}")
-            ]
-
-    elif name == "list_folders":
-        parent_id = arguments.get("parent_id", "root")
-        max_results = int(arguments.get("max_results", 10))
-
-        # Query to find only folders
-        query = f"'{parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder'"
-
-        results = (
-            service.files()
-            .list(
-                q=query, pageSize=max_results, fields="files(id, name, createdTime, modifiedTime)"
-            )
-            .execute()
-        )
-
-        folders = results.get("files", [])
-        if not folders:
-            parent_name = (
-                "Root"
-                if parent_id == "root"
-                else service.files().get(fileId=parent_id, fields="name").execute()["name"]
-            )
-            return [types.TextContent(type="text", text=f"No folders found in '{parent_name}'.")]
-
-        folder_list_items = []
-        for folder in folders:
-            folder_info = f"• {folder['name']} (ID: {folder['id']})\n"
-            if "createdTime" in folder:
-                folder_info += f"  - Created: {folder['createdTime']}\n"
-            if "modifiedTime" in folder:
-                folder_info += f"  - Modified: {folder['modifiedTime']}\n"
-            folder_list_items.append(folder_info)
-
+    folders = results.get("files", [])
+    if not folders:
         parent_name = (
             "Root"
             if parent_id == "root"
             else service.files().get(fileId=parent_id, fields="name").execute()["name"]
         )
-        folder_list = "\n".join(folder_list_items)
-        return [
-            types.TextContent(
-                type="text", text=f"Folders in '{parent_name}' ({len(folders)}):\n\n{folder_list}"
-            )
-        ]
+        return f"No folders found in '{parent_name}'."
 
-    return [types.TextContent(type="text", text=f"Unknown tool: {name}")]
+    folder_list_items = []
+    for folder in folders:
+        folder_info = f"• {folder['name']} (ID: {folder['id']})\n"
+        if "createdTime" in folder:
+            folder_info += f"  - Created: {folder['createdTime']}\n"
+        if "modifiedTime" in folder:
+            folder_info += f"  - Modified: {folder['modifiedTime']}\n"
+        folder_list_items.append(folder_info)
 
-
-if __name__ == "__main__":
-    app.run()
+    parent_name = (
+        "Root"
+        if parent_id == "root"
+        else service.files().get(fileId=parent_id, fields="name").execute()["name"]
+    )
+    folder_list = "\n".join(folder_list_items)
+    return f"Folders in '{parent_name}' ({len(folders)}):\n\n{folder_list}"
