@@ -16,4 +16,4 @@ if [ ! -f ".env" ]; then
 fi
 
 # Run the client
-python client.py gdrive_server.py
+python client.py gdrive_server_fixed.py
