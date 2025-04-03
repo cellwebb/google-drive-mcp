@@ -28,7 +28,7 @@ uv pip install mcp anthropic python-dotenv google-auth google-auth-oauthlib goog
 
 3. Create a `.env` file with your Anthropic API key:
 
-```
+```bash
 ANTHROPIC_API_KEY=your_api_key_here
 GOOGLE_CREDENTIALS_PATH=path/to/your/service_account_credentials.json  # Optional
 ```
