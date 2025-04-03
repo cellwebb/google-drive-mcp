@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: google-drive-mcp-client
     volumes:
-      - .:/app
+      - ./app:/app
       - ~/.config/gcloud:/root/.config/gcloud  # For Google credentials persistence
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
