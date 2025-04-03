@@ -4,11 +4,10 @@ import pickle
 
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
-from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.fastmcp import FastMCP
 
 # If modifying these scopes, delete the token.pickle file
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
@@ -48,7 +47,8 @@ def get_drive_service():
                     )
                 else:
                     raise Exception(
-                        "No valid credentials found. Please provide credentials.json or set GOOGLE_APPLICATION_CREDENTIALS environment variable."
+                        "No valid credentials found. Please provide credentials.json "
+                        "or set GOOGLE_APPLICATION_CREDENTIALS environment variable."
                     )
 
         # Save the credentials for future runs
@@ -199,7 +199,10 @@ async def get_file_content(file_id: str) -> str:
             return f"Content of Google Sheet '{file['name']}' (CSV format):\n\n{content}"
 
         else:
-            return f"Cannot display content for file type: {file['mimeType']}. This file type is not supported for text preview."
+            return (
+                f"Cannot display content for file type: {file['mimeType']}. "
+                "This file type is not supported for text preview."
+            )
 
     except Exception as e:
         return f"Error retrieving file: {str(e)}"
@@ -219,7 +222,7 @@ async def get_file_metadata(file_id: str) -> str:
             service.files()
             .get(
                 fileId=file_id,
-                fields="id,name,mimeType,createdTime,modifiedTime,size,description,webViewLink,owners,parents",
+                fields="id,name,mimeType,createdTime,modifiedTime,size,description,webViewLink,owners,parents",  # noqa: E501
             )
             .execute()
         )

@@ -18,7 +18,7 @@ source .venv/bin/activate  # On macOS/Linux
 uv pip install mcp anthropic python-dotenv google-auth google-auth-oauthlib google-api-python-client
 ```
 
-2. Set up Google Drive API credentials:
+1. Set up Google Drive API credentials:
 
    - Go to the [Google Cloud Console](https://console.cloud.google.com/)
    - Create a new project
@@ -26,7 +26,7 @@ uv pip install mcp anthropic python-dotenv google-auth google-auth-oauthlib goog
    - Create OAuth credentials (OAuth client ID)
    - Download the credentials as JSON and save it as `credentials.json` in this directory
 
-3. Create a `.env` file with your Anthropic API key:
+1. Create a `.env` file with your Anthropic API key:
 
 ```bash
 ANTHROPIC_API_KEY=your_api_key_here

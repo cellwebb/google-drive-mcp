@@ -5,7 +5,6 @@ import pickle
 import mcp.server.types as types
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
-from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
@@ -48,7 +47,8 @@ def get_drive_service():
                     )
                 else:
                     raise Exception(
-                        "No valid credentials found. Please provide credentials.json or set GOOGLE_APPLICATION_CREDENTIALS environment variable."
+                        "No valid credentials found. Please provide credentials.json "
+                        "or set GOOGLE_APPLICATION_CREDENTIALS environment variable."
                     )
 
         # Save the credentials for future runs
@@ -262,7 +262,10 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
                 return [
                     types.TextContent(
                         type="text",
-                        text=f"Cannot display content for file type: {file['mimeType']}. This file type is not supported for text preview.",
+                        text=(
+                            f"Cannot display content for file type: {file['mimeType']}. "
+                            "This file type is not supported for text preview."
+                        ),
                     )
                 ]
 
@@ -277,7 +280,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
                 service.files()
                 .get(
                     fileId=file_id,
-                    fields="id,name,mimeType,createdTime,modifiedTime,size,description,webViewLink,owners,parents",
+                    fields="id,name,mimeType,createdTime,modifiedTime,size,description,webViewLink,owners,parents",  # noqa: E501
                 )
                 .execute()
             )
