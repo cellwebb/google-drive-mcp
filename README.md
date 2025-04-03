@@ -15,7 +15,7 @@ source .venv/bin/activate  # On macOS/Linux
 # On Windows use: .venv\Scripts\activate
 
 # Install required packages
-uv add mcp anthropic python-dotenv google-auth google-auth-oauthlib google-api-python-client
+uv pip install mcp anthropic python-dotenv google-auth google-auth-oauthlib google-api-python-client
 ```
 
 2. Set up Google Drive API credentials:
